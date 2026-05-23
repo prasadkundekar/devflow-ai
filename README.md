@@ -38,9 +38,9 @@
 
 Ideal for portfolios, UI/UX showcases, or as a starter shell for a real SaaS product.
 
-<p align="center">
+<!-- <p align="center">
   <img src="https://img.shields.io/badge/Status-Active%20Development-7c5cff?style=for-the-badge" alt="Status" />
-</p>
+</p> -->
 
 ---
 
@@ -123,7 +123,7 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173) in your browser.
+
 
 ### Production build
 

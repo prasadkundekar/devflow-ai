@@ -11,17 +11,25 @@ import {
   AI_RESPONSES,
   INITIAL_CHAT,
   NOTES as DEFAULT_NOTES,
+  SNIPPETS as DEFAULT_SNIPPETS,
   TASKS as DEFAULT_TASKS,
 } from '../data/mockData'
 import { useLocalStorage } from '../hooks/useLocalStorage'
+import {
+  buildTaskFromInput,
+  migrateTasks,
+  stampColumnChange,
+} from '../lib/migrateTask'
 import { clearDevFlowStorage, STORAGE_KEYS } from '../lib/storage'
 import type {
   ChatMessage,
   CreateTaskInput,
   Note,
   SectionId,
+  Snippet,
   Task,
   TaskColumn,
+  UpdateTaskInput,
 } from '../types'
 import { ACCENT_COLORS } from '../types'
 
@@ -73,11 +81,16 @@ interface AppContextValue {
   setSnippetFilter: (tag: string) => void
   tasks: Task[]
   addTask: (input: CreateTaskInput) => void
+  updateTask: (input: UpdateTaskInput) => void
+  deleteTask: (id: string) => void
   moveTask: (taskId: string, column: TaskColumn) => void
   taskStats: { active: number; completed: number; inProgress: number }
   notes: Note[]
   saveNote: (note: Note) => void
   deleteNote: (id: string) => void
+  snippets: Snippet[]
+  saveSnippet: (snippet: Snippet) => void
+  deleteSnippet: (id: string) => void
   resetWorkspace: () => void
 }
 
@@ -91,11 +104,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [section, setSection] = useState<SectionId>('dashboard')
   const [tasks, setTasks] = useLocalStorage<Task[]>(
     STORAGE_KEYS.tasks,
-    DEFAULT_TASKS,
+    migrateTasks(DEFAULT_TASKS),
   )
   const [notes, setNotes] = useLocalStorage<Note[]>(
     STORAGE_KEYS.notes,
     DEFAULT_NOTES,
+  )
+  const [snippets, setSnippets] = useLocalStorage<Snippet[]>(
+    STORAGE_KEYS.snippets,
+    DEFAULT_SNIPPETS,
   )
   const [settings, setSettings] = useLocalStorage<PersistedSettings>(
     STORAGE_KEYS.settings,
@@ -121,6 +138,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     document.documentElement.style.setProperty('--accent', accent)
   }, [accent])
+
+  useEffect(() => {
+    setTasks((prev) => {
+      const migrated = migrateTasks(prev)
+      return JSON.stringify(migrated) === JSON.stringify(prev) ? prev : migrated
+    })
+  }, [setTasks])
 
   const patchSettings = useCallback(
     (patch: Partial<PersistedSettings>) => {
@@ -168,19 +192,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const addTask = useCallback(
     (input: CreateTaskInput) => {
-      const task: Task = {
-        id: crypto.randomUUID(),
-        title: input.title.trim(),
-        description: input.description.trim(),
-        column: input.column,
-        priority: input.priority,
-        tags: input.tags,
-        dueDate: input.dueDate,
-      }
-      if (input.column === 'in-progress') {
-        task.progress = 10
-      }
+      const task = buildTaskFromInput(input)
       setTasks((prev) => [task, ...prev])
+    },
+    [setTasks],
+  )
+
+  const updateTask = useCallback(
+    (input: UpdateTaskInput) => {
+      setTasks((prev) =>
+        prev.map((t) => {
+          if (t.id !== input.id) return t
+          return buildTaskFromInput(input, t)
+        }),
+      )
+    },
+    [setTasks],
+  )
+
+  const deleteTask = useCallback(
+    (id: string) => {
+      setTasks((prev) => prev.filter((t) => t.id !== id))
     },
     [setTasks],
   )
@@ -188,20 +220,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const moveTask = useCallback(
     (taskId: string, column: TaskColumn) => {
       setTasks((prev) =>
-        prev.map((t) => {
-          if (t.id !== taskId) return t
-          const updated: Task = { ...t, column }
-          if (column === 'in-progress' && updated.progress === undefined) {
-            updated.progress = 10
-          }
-          if (column === 'done') {
-            delete updated.progress
-          }
-          if (column === 'backlog') {
-            delete updated.progress
-          }
-          return updated
-        }),
+        prev.map((t) => (t.id === taskId ? stampColumnChange(t, column) : t)),
       )
     },
     [setTasks],
@@ -238,14 +257,44 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [setNotes],
   )
 
+  const saveSnippet = useCallback(
+    (snippet: Snippet) => {
+      setSnippets((prev) => {
+        const idx = prev.findIndex((s) => s.id === snippet.id)
+        if (idx >= 0) {
+          const next = [...prev]
+          next[idx] = snippet
+          return next
+        }
+        return [snippet, ...prev]
+      })
+    },
+    [setSnippets],
+  )
+
+  const deleteSnippet = useCallback(
+    (id: string) => {
+      setSnippets((prev) => prev.filter((s) => s.id !== id))
+    },
+    [setSnippets],
+  )
+
   const resetWorkspace = useCallback(() => {
     clearDevFlowStorage()
-    setTasks(DEFAULT_TASKS)
+    setTasks(migrateTasks(DEFAULT_TASKS))
     setNotes(DEFAULT_NOTES)
+    setSnippets(DEFAULT_SNIPPETS)
     setSettings(DEFAULT_SETTINGS)
     setChatMessages(INITIAL_CHAT)
     showToast('Workspace reset to defaults')
-  }, [setTasks, setNotes, setSettings, setChatMessages, showToast])
+  }, [
+    setTasks,
+    setNotes,
+    setSnippets,
+    setSettings,
+    setChatMessages,
+    showToast,
+  ])
 
   const sendChat = useCallback(
     async (text: string) => {
@@ -301,11 +350,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setSnippetFilter,
       tasks,
       addTask,
+      updateTask,
+      deleteTask,
       moveTask,
       taskStats,
       notes,
       saveNote,
       deleteNote,
+      snippets,
+      saveSnippet,
+      deleteSnippet,
       resetWorkspace,
     }),
     [
@@ -328,11 +382,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       snippetFilter,
       tasks,
       addTask,
+      updateTask,
+      deleteTask,
       moveTask,
       taskStats,
       notes,
       saveNote,
       deleteNote,
+      snippets,
+      saveSnippet,
+      deleteSnippet,
       resetWorkspace,
     ],
   )

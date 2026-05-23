@@ -1,6 +1,7 @@
 export const STORAGE_KEYS = {
   tasks: 'devflow-tasks',
   notes: 'devflow-notes',
+  snippets: 'devflow-snippets',
   settings: 'devflow-settings',
   chat: 'devflow-chat',
 } as const

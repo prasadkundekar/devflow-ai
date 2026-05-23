@@ -10,8 +10,8 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
-import { GripVertical, Plus } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { GripVertical, Pencil, Plus } from 'lucide-react'
+import { useState, type HTMLAttributes, type ReactNode } from 'react'
 import { TaskFormModal } from '../tasks/TaskFormModal'
 import { useApp } from '../../context/AppContext'
 import type { Priority, Task, TaskColumn } from '../../types'
@@ -28,14 +28,29 @@ const PRIORITY_COLORS: Record<Priority, string> = {
   low: '#6b7280',
 }
 
-function TaskCardContent({ task, dragging }: { task: Task; dragging?: boolean }) {
+function TaskCardContent({
+  task,
+  dragging,
+  dragHandle,
+  onEdit,
+}: {
+  task: Task
+  dragging?: boolean
+  dragHandle?: HTMLAttributes<HTMLDivElement>
+  onEdit: () => void
+}) {
   return (
     <>
       <div className="flex items-start gap-2">
-        <GripVertical
-          size={14}
-          className={`mt-1 shrink-0 text-[#8b92a8] ${dragging ? 'text-[var(--accent)]' : ''}`}
-        />
+        <div
+          className="shrink-0 touch-none"
+          {...dragHandle}
+        >
+          <GripVertical
+            size={14}
+            className={`mt-1 cursor-grab text-[#8b92a8] active:cursor-grabbing ${dragging ? 'text-[var(--accent)]' : ''}`}
+          />
+        </div>
         <span
           className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
           style={{ background: PRIORITY_COLORS[task.priority] }}
@@ -47,6 +62,17 @@ function TaskCardContent({ task, dragging }: { task: Task; dragging?: boolean })
             {task.description}
           </p>
         </div>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onEdit()
+          }}
+          className="shrink-0 rounded-md p-1 text-[#8b92a8] hover:bg-white/8 hover:text-white"
+          aria-label="Edit task"
+        >
+          <Pencil size={14} />
+        </button>
       </div>
       <div className="mt-3 flex flex-wrap gap-1.5">
         {task.tags.map((tag) => (
@@ -77,7 +103,13 @@ function TaskCardContent({ task, dragging }: { task: Task; dragging?: boolean })
   )
 }
 
-function DraggableTaskCard({ task }: { task: Task }) {
+function DraggableTaskCard({
+  task,
+  onEdit,
+}: {
+  task: Task
+  onEdit: () => void
+}) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({ id: task.id, data: { task } })
 
@@ -89,13 +121,14 @@ function DraggableTaskCard({ task }: { task: Task }) {
     <article
       ref={setNodeRef}
       style={style}
-      className={`glass p-4 touch-none ${
-        isDragging ? 'opacity-40' : 'hover-lift cursor-grab'
-      }`}
-      {...listeners}
-      {...attributes}
+      className={`glass p-4 ${isDragging ? 'opacity-40' : 'hover-lift'}`}
     >
-      <TaskCardContent task={task} dragging={isDragging} />
+      <TaskCardContent
+        task={task}
+        dragging={isDragging}
+        dragHandle={{ ...listeners, ...attributes }}
+        onEdit={onEdit}
+      />
     </article>
   )
 }
@@ -138,11 +171,27 @@ function ColumnDropZone({
 export function Tasks() {
   const { tasks, moveTask, showToast, taskStats } = useApp()
   const [activeTask, setActiveTask] = useState<Task | null>(null)
-  const [createOpen, setCreateOpen] = useState(false)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editingTask, setEditingTask] = useState<Task | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
   )
+
+  const openCreate = () => {
+    setEditingTask(null)
+    setModalOpen(true)
+  }
+
+  const openEdit = (task: Task) => {
+    setEditingTask(task)
+    setModalOpen(true)
+  }
+
+  const closeModal = () => {
+    setModalOpen(false)
+    setEditingTask(null)
+  }
 
   const onDragStart = (event: DragStartEvent) => {
     const task = tasks.find((t) => t.id === event.active.id)
@@ -171,12 +220,13 @@ export function Tasks() {
           <h1 className="text-2xl font-bold">Kanban Board</h1>
           <p className="mt-1 text-sm text-[#8b92a8]">
             Drag cards between columns — {taskStats.active} active,{' '}
-            {taskStats.inProgress} in progress (saved automatically)
+            {taskStats.inProgress} in progress. Click{' '}
+            <Pencil size={12} className="inline" /> to edit.
           </p>
         </div>
         <button
           type="button"
-          onClick={() => setCreateOpen(true)}
+          onClick={openCreate}
           className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-white hover:opacity-90"
           style={{
             background: 'linear-gradient(135deg, var(--accent), #3b82f6)',
@@ -187,7 +237,11 @@ export function Tasks() {
         </button>
       </header>
 
-      <TaskFormModal open={createOpen} onClose={() => setCreateOpen(false)} />
+      <TaskFormModal
+        open={modalOpen}
+        onClose={closeModal}
+        task={editingTask}
+      />
 
       <DndContext
         sensors={sensors}
@@ -205,7 +259,11 @@ export function Tasks() {
                 count={columnTasks.length}
               >
                 {columnTasks.map((task) => (
-                  <DraggableTaskCard key={task.id} task={task} />
+                  <DraggableTaskCard
+                    key={task.id}
+                    task={task}
+                    onEdit={() => openEdit(task)}
+                  />
                 ))}
                 {columnTasks.length === 0 && (
                   <p className="py-8 text-center text-xs text-[#8b92a8]">
@@ -220,7 +278,7 @@ export function Tasks() {
         <DragOverlay>
           {activeTask ? (
             <article className="glass rotate-1 scale-105 cursor-grabbing p-4 shadow-2xl ring-2 ring-[var(--accent)]">
-              <TaskCardContent task={activeTask} dragging />
+              <TaskCardContent task={activeTask} dragging onEdit={() => {}} />
             </article>
           ) : null}
         </DragOverlay>

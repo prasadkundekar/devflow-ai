@@ -19,7 +19,11 @@ export interface Task {
   priority: Priority
   tags: string[]
   dueDate: string
+  dueDateIso?: string
   progress?: number
+  createdAt?: string
+  updatedAt?: string
+  completedAt?: string
 }
 
 export interface CreateTaskInput {
@@ -29,6 +33,12 @@ export interface CreateTaskInput {
   priority: Priority
   tags: string[]
   dueDate: string
+  dueDateIso: string
+  progress?: number
+}
+
+export interface UpdateTaskInput extends CreateTaskInput {
+  id: string
 }
 
 export interface Note {

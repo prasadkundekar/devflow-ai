@@ -179,9 +179,9 @@ devflow-ai/
 
 ## Roadmap
 
-- [ ] Edit and delete tasks from the Kanban board
-- [ ] Add and manage custom code snippets
-- [ ] Analytics driven by real task activity
+- [x] Edit and delete tasks from the Kanban board
+- [x] Add and manage custom code snippets
+- [x] Analytics driven by real task activity
 - [ ] Optional backend API (auth, sync across devices)
 - [ ] Live demo deployment (Vercel / Netlify)
 

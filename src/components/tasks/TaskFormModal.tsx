@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useApp } from '../../context/AppContext'
-import type { CreateTaskInput, Priority, TaskColumn } from '../../types'
+import { defaultDueIso, formatDueDate } from '../../lib/taskDates'
+import type { Priority, Task, TaskColumn } from '../../types'
 import { Modal } from '../ui/Modal'
 
 const COLUMNS: { id: TaskColumn; label: string }[] = [
@@ -15,60 +16,100 @@ const PRIORITIES: { id: Priority; label: string }[] = [
   { id: 'low', label: 'Low' },
 ]
 
-function defaultDueIso() {
-  const d = new Date()
-  d.setDate(d.getDate() + 7)
-  return d.toISOString().slice(0, 10)
+interface Draft {
+  title: string
+  description: string
+  column: TaskColumn
+  priority: Priority
+  tags: string
+  dueIso: string
+  progress: string
 }
 
-function formatDueDate(isoDate: string) {
-  const d = new Date(`${isoDate}T12:00:00`)
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-}
-
-const EMPTY_DRAFT = () => ({
+const emptyDraft = (): Draft => ({
   title: '',
   description: '',
-  column: 'backlog' as TaskColumn,
-  priority: 'medium' as Priority,
+  column: 'backlog',
+  priority: 'medium',
   tags: '',
   dueIso: defaultDueIso(),
+  progress: '10',
 })
+
+function draftFromTask(task: Task): Draft {
+  return {
+    title: task.title,
+    description: task.description,
+    column: task.column,
+    priority: task.priority,
+    tags: task.tags.join(', '),
+    dueIso: task.dueDateIso ?? defaultDueIso(),
+    progress: String(task.progress ?? 10),
+  }
+}
 
 interface TaskFormModalProps {
   open: boolean
   onClose: () => void
+  task?: Task | null
 }
 
-export function TaskFormModal({ open, onClose }: TaskFormModalProps) {
-  const { addTask, showToast } = useApp()
-  const [draft, setDraft] = useState(EMPTY_DRAFT)
+export function TaskFormModal({ open, onClose, task }: TaskFormModalProps) {
+  const { addTask, updateTask, deleteTask, showToast } = useApp()
+  const isEdit = !!task
+  const [draft, setDraft] = useState<Draft>(emptyDraft)
+
+  useEffect(() => {
+    if (open) {
+      setDraft(task ? draftFromTask(task) : emptyDraft())
+    }
+  }, [open, task])
 
   const handleClose = () => {
-    setDraft(EMPTY_DRAFT())
+    setDraft(emptyDraft())
     onClose()
   }
+
+  const buildInput = () => ({
+    title: draft.title.trim(),
+    description: draft.description.trim() || 'No description',
+    column: draft.column,
+    priority: draft.priority,
+    tags: draft.tags
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean),
+    dueDate: formatDueDate(draft.dueIso),
+    dueDateIso: draft.dueIso,
+    progress:
+      draft.column === 'in-progress'
+        ? Math.min(100, Math.max(0, Number(draft.progress) || 0))
+        : undefined,
+  })
 
   const handleSave = () => {
     if (!draft.title.trim()) {
       showToast('Add a task title')
       return
     }
-
-    const input: CreateTaskInput = {
-      title: draft.title.trim(),
-      description: draft.description.trim() || 'No description',
-      column: draft.column,
-      priority: draft.priority,
-      tags: draft.tags
-        .split(',')
-        .map((t) => t.trim())
-        .filter(Boolean),
-      dueDate: formatDueDate(draft.dueIso),
+    const input = buildInput()
+    if (isEdit && task) {
+      updateTask({ ...input, id: task.id })
+      showToast('Task updated')
+    } else {
+      addTask(input)
+      showToast(
+        `Task added to ${COLUMNS.find((c) => c.id === draft.column)?.label}`,
+      )
     }
+    handleClose()
+  }
 
-    addTask(input)
-    showToast(`Task added to ${COLUMNS.find((c) => c.id === draft.column)?.label}`)
+  const handleDelete = () => {
+    if (!task) return
+    if (!window.confirm(`Delete "${task.title}"?`)) return
+    deleteTask(task.id)
+    showToast('Task deleted')
     handleClose()
   }
 
@@ -76,9 +117,18 @@ export function TaskFormModal({ open, onClose }: TaskFormModalProps) {
     <Modal
       open={open}
       onClose={handleClose}
-      title="New task"
+      title={isEdit ? 'Edit task' : 'New task'}
       footer={
         <>
+          {isEdit && (
+            <button
+              type="button"
+              onClick={handleDelete}
+              className="mr-auto rounded-lg px-3 py-2 text-sm text-rose-400 hover:bg-rose-500/10"
+            >
+              Delete
+            </button>
+          )}
           <button
             type="button"
             onClick={handleClose}
@@ -94,7 +144,7 @@ export function TaskFormModal({ open, onClose }: TaskFormModalProps) {
               background: 'linear-gradient(135deg, var(--accent), #3b82f6)',
             }}
           >
-            Create task
+            {isEdit ? 'Save changes' : 'Create task'}
           </button>
         </>
       }
@@ -184,6 +234,21 @@ export function TaskFormModal({ open, onClose }: TaskFormModalProps) {
             />
           </div>
         </div>
+        {draft.column === 'in-progress' && (
+          <div>
+            <label className="text-xs text-[#8b92a8]">Progress (%)</label>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={draft.progress}
+              onChange={(e) =>
+                setDraft({ ...draft, progress: e.target.value })
+              }
+              className="mt-1 w-full rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
+            />
+          </div>
+        )}
       </div>
     </Modal>
   )
